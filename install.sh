@@ -683,6 +683,63 @@ update_bootloader() {
     fi
 }
 
+# 函数：安装内核前刷新关键用户态组件，降低 7.x 内核安装和启动失败概率
+refresh_kernel_install_userspace() {
+    local required_packages=(dpkg kmod initramfs-tools)
+    local upgrade_candidates=(
+        dpkg
+        kmod
+        initramfs-tools
+        initramfs-tools-core
+        initramfs-tools-bin
+        linux-base
+        systemd
+        systemd-sysv
+        udev
+        grub-common
+        grub2-common
+        grub-pc
+        grub-efi-amd64
+        grub-efi-arm64
+        shim-signed
+    )
+    local installed_packages=()
+    local pkg
+
+    echo -e "\033[36m安装内核前刷新关键用户态组件...\033[0m"
+    echo -e "\033[33m将更新 apt 索引，并刷新已安装的 dpkg/initramfs/kmod/systemd/udev/grub 等启动相关组件。\033[0m"
+
+    if ! sudo apt-get update; then
+        echo -e "\033[31mapt 索引更新失败。为避免安装后无法生成 initramfs 或更新引导，已中止内核安装。\033[0m"
+        return 1
+    fi
+
+    if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${required_packages[@]}"; then
+        echo -e "\033[31m关键用户态组件安装/检查失败。已中止内核安装。\033[0m"
+        return 1
+    fi
+
+    for pkg in "${upgrade_candidates[@]}"; do
+        if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            installed_packages+=("$pkg")
+        fi
+    done
+
+    if [[ ${#installed_packages[@]} -gt 0 ]]; then
+        if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y "${installed_packages[@]}"; then
+            echo -e "\033[31m启动相关用户态组件升级失败。已中止内核安装。\033[0m"
+            return 1
+        fi
+    fi
+
+    if ! command -v update-initramfs &> /dev/null; then
+        echo -e "\033[31m未找到 update-initramfs，当前系统不适合继续安装通用 7.x 内核。\033[0m"
+        return 1
+    fi
+
+    echo -e "\033[1;32m关键用户态组件已刷新完成。\033[0m"
+}
+
 # 函数：安全地安装下载的包
 install_packages() {
     if ! ls /tmp/linux-*.deb &> /dev/null; then
@@ -697,6 +754,8 @@ install_packages() {
             return 1
         fi
     done
+
+    refresh_kernel_install_userspace || return 1
     
     echo -e "\033[36m开始卸载旧版内核... \033[0m"
     INSTALLED_PACKAGES=$(dpkg -l | grep "joeyblog" | awk '{print $2}' | tr '\n' ' ')
