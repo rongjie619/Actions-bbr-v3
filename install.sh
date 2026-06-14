@@ -280,15 +280,15 @@ ensure_ookla_speedtest() {
     SPEEDTEST_BIN="/usr/local/bin/speedtest"
 }
 
-# 函数：运行 Ookla Speedtest 并解析 Ping/Download/Upload
+# 函数：运行 Ookla Speedtest 并解析 Download/Upload，不展示测速节点延迟
 run_speedtest_measurement() {
-    SPEEDTEST_PING=""
     SPEEDTEST_DOWNLOAD=""
     SPEEDTEST_UPLOAD=""
 
     ensure_ookla_speedtest || return 1
 
     echo -e "\033[36m正在运行 Ookla Speedtest 测速，请稍候...\033[0m"
+    echo -e "\033[33m测速只用于估算带宽；测速节点延迟不会显示，也不会用于 RTT 计算。\033[0m"
     local servers_list
     local speedtest_output=""
     local attempt=0
@@ -309,7 +309,6 @@ run_speedtest_measurement() {
             speedtest_output=$("$SPEEDTEST_BIN" --accept-license --accept-gdpr --server-id="$server_id" 2>&1)
         fi
 
-        SPEEDTEST_PING=$(echo "$speedtest_output" | sed -nE 's/.*(Idle Latency|Latency|Ping):[[:space:]]*([0-9]+(\.[0-9]+)?).*/\2/p' | head -n1)
         SPEEDTEST_DOWNLOAD=$(echo "$speedtest_output" | sed -nE 's/.*[Dd]ownload:[[:space:]]*([0-9]+(\.[0-9]+)?).*/\1/p' | head -n1)
         SPEEDTEST_UPLOAD=$(echo "$speedtest_output" | sed -nE 's/.*[Uu]pload:[[:space:]]*([0-9]+(\.[0-9]+)?).*/\1/p' | head -n1)
 
@@ -317,19 +316,17 @@ run_speedtest_measurement() {
             break
         fi
 
-        SPEEDTEST_PING=""
         SPEEDTEST_DOWNLOAD=""
         SPEEDTEST_UPLOAD=""
     done
 
     if is_positive_number "$SPEEDTEST_UPLOAD"; then
-        echo -e "\033[36m  Ping:     \033[1;32m${SPEEDTEST_PING:-未知} ms\033[0m"
         echo -e "\033[36m  Download: \033[1;32m${SPEEDTEST_DOWNLOAD:-0} Mbit/s\033[0m"
         echo -e "\033[36m  Upload:   \033[1;32m${SPEEDTEST_UPLOAD} Mbit/s\033[0m"
         return 0
     fi
 
-    echo -e "\033[33m⚠ Speedtest 输出解析失败，将改为手动输入带宽和 RTT。\033[0m"
+    echo -e "\033[33m⚠ Speedtest 输出解析失败，将改为手动输入带宽。\033[0m"
     return 1
 }
 
@@ -357,10 +354,10 @@ select_tuning_rtt() {
     local buffer_choice=""
 
     while true; do
-        echo -e "\033[36m请选择线路模式：\033[0m"
-        echo -e "\033[33m 1. 亚太线路（RTT < 100ms）\033[0m"
-        echo -e "\033[33m 2. 美欧线路（RTT 150-300ms）\033[0m"
-        echo -e "\033[33m 3. 手动输入 RTT\033[0m"
+        echo -e "\033[36m请选择 buffer 档位模式，并手动输入真实业务方向 RTT：\033[0m"
+        echo -e "\033[33m 1. 亚太档位（通常 RTT < 100ms）\033[0m"
+        echo -e "\033[33m 2. 美欧档位（通常 RTT 150-300ms）\033[0m"
+        echo -e "\033[33m 3. 手动 RTT + 手动档位\033[0m"
         echo -n -e "\033[36m请选择 (1-3): \033[0m"
         read -r choice
 
@@ -368,17 +365,17 @@ select_tuning_rtt() {
             1)
                 SMART_REGION="亚太"
                 SMART_REGION_CODE="asia"
-                SMART_RTT_MS=$(read_positive_value "\033[36m请输入实际 RTT(ms，默认 80): \033[0m" "80")
+                SMART_RTT_MS=$(read_positive_value "\033[36m请输入真实业务方向 RTT(ms，默认 80；不要填 Speedtest 延迟): \033[0m" "80")
                 return 0
                 ;;
             2)
                 SMART_REGION="美欧"
                 SMART_REGION_CODE="overseas"
-                SMART_RTT_MS=$(read_positive_value "\033[36m请输入实际 RTT(ms，默认 220): \033[0m" "220")
+                SMART_RTT_MS=$(read_positive_value "\033[36m请输入真实业务方向 RTT(ms，默认 220；不要填 Speedtest 延迟): \033[0m" "220")
                 return 0
                 ;;
             3)
-                SMART_RTT_MS=$(read_positive_value "\033[36m请输入实际 RTT(ms，默认 100): \033[0m" "100")
+                SMART_RTT_MS=$(read_positive_value "\033[36m请输入真实业务方向 RTT(ms，默认 100；不要填 Speedtest 延迟): \033[0m" "100")
                 while true; do
                     echo -e "\033[36m请选择 buffer 档位模式：\033[0m"
                     echo -e "\033[33m 1. 亚太档位\033[0m"
@@ -479,7 +476,7 @@ apply_smart_bandwidth_tuning() {
 
     echo -e "\033[1;32m✔ 智能优化配置已永久写入：$SYSCTL_CONF\033[0m"
     echo -e "\033[36m  线路模式：               \033[1;32m$SMART_REGION\033[0m"
-    echo -e "\033[36m  计算 RTT：                \033[1;32m${SMART_RTT_MS} ms\033[0m"
+    echo -e "\033[36m  手动 RTT：                \033[1;32m${SMART_RTT_MS} ms\033[0m"
     echo -e "\033[36m  上传/下载：               \033[1;32m${upload_mbps}/${download_mbps} Mbit/s\033[0m"
     echo -e "\033[36m  推荐缓冲区：             \033[1;32m${buffer_mb}MB\033[0m"
     echo -e "\033[36m  内存保护上限：           \033[1;32m${cap_mb}MB\033[0m"

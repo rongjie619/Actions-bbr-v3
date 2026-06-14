@@ -198,13 +198,14 @@ net.ipv4.tcp_slow_start_after_idle = 0
 10. BBR v3 智能带宽优化
 ```
 
-脚本会优先安装并运行 Ookla 官方 `speedtest`，自动尝试附近测速服务器并获取上传带宽、下载带宽和 Ping；如果测速失败，会提示手动输入上传带宽。
+脚本会优先安装并运行 Ookla 官方 `speedtest`，自动尝试附近测速服务器并获取上传/下载带宽；如果测速失败，会提示手动输入上传带宽。Speedtest 的测速节点延迟会被隐藏，不展示也不参与 RTT 计算，避免把测速节点延迟误当作真实业务线路延迟。
 
 优化逻辑：
 
 - 自动启用 `bbr` 拥塞控制和 `fq` 队列算法。
 - 根据上传带宽和地区模式映射推荐 TCP buffer 档位。
-- 用户手动选择亚太、美欧或手动 RTT，不再按测速 RTT 自动判断。
+- RTT 必须由用户手动输入，应填写真实业务方向延迟，不使用 Speedtest 测出来的 Ping。
+- 用户手动选择亚太、美欧或手动 RTT + buffer 档位，不再按测速 RTT 自动判断。
 - 亚太线路使用较保守的 buffer，美欧高延迟线路使用更大 buffer。
 - 按机器内存设置 TCP buffer 上限，避免小内存 VPS 过度放大缓冲区。
 - 同步写入 `net.core.rmem_max` / `net.core.wmem_max` / `tcp_rmem` / `tcp_wmem`。
